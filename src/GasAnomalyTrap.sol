@@ -4,68 +4,57 @@ pragma solidity ^0.8.20;
 import {ITrap} from "drosera-contracts/interfaces/ITrap.sol";
 
 contract GasAnomalyTrap is ITrap {
-    
-    struct GasData {
-        uint256 totalGasUsed;
-        uint256 transactionCount;
-        uint256 lastGasPrice;
-        uint256 averageGasPrice;
-    }
-    
-    mapping(address => GasData) private walletGasData;
     uint256 private constant GAS_MULTIPLIER_THRESHOLD = 3;
-    uint256 private constant MIN_TRANSACTIONS = 5;
-    
+
     constructor() {}
-    
+
     function collect() external view returns (bytes memory) {
-        GasData memory data = walletGasData[tx.origin];
-        
         return abi.encode(
             tx.origin,
             tx.gasprice,
-            data.averageGasPrice,
-            data.transactionCount,
             block.timestamp
         );
     }
-    
+
     function shouldRespond(bytes[] calldata data) external pure returns (bool, bytes memory) {
-        if (data.length == 0) {
-            return (false, abi.encode("No data provided"));
+        if (data.length < 5) {
+            return (false, abi.encode("Not enough samples"));
         }
-        
-        (
-            address walletAddr,
-            uint256 currentGasPrice,
-            uint256 avgGasPrice,
-            uint256 txCount,
-            uint256 timestamp
-        ) = abi.decode(data[0], (address, uint256, uint256, uint256, uint256));
-        
-        if (txCount < MIN_TRANSACTIONS) {
-            return (false, abi.encode("Insufficient transaction history"));
+
+        address wallet;
+        uint256 currentGas;
+        uint256 totalGas = 0;
+
+        for (uint256 i = 0; i < data.length; i++) {
+            (address w, uint256 g, ) = abi.decode(data[i], (address, uint256, uint256));
+            if (i == 0) {
+                wallet = w;
+                currentGas = g;
+            } else {
+                totalGas += g;
+            }
         }
-        
-        if (avgGasPrice == 0) {
-            return (false, abi.encode("No average gas price data"));
+
+        uint256 avgGas = totalGas / (data.length - 1);
+
+        if (avgGas == 0) {
+            return (false, abi.encode("Average gas is zero"));
         }
-        
-        bool isAnomalous = currentGasPrice > (avgGasPrice * GAS_MULTIPLIER_THRESHOLD);
-        
-        if (isAnomalous) {
-            bytes memory responseData = abi.encode(
-                walletAddr,
-                currentGasPrice,
-                avgGasPrice,
-                (currentGasPrice * 100) / avgGasPrice,
-                timestamp,
-                "ALERT: Gas price anomaly detected - possible wallet compromise"
+
+        if (currentGas > avgGas * GAS_MULTIPLIER_THRESHOLD) {
+            return (
+                true,
+                abi.encode(
+                    wallet,
+                    currentGas,
+                    avgGas,
+                    (currentGas * 100) / avgGas,
+                    block.timestamp,
+                    "ALERT: Gas anomaly detected"
+                )
             );
-            
-            return (true, responseData);
         }
-        
+
         return (false, abi.encode("Gas usage within normal range"));
     }
 }
