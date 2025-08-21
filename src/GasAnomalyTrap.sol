@@ -12,7 +12,7 @@ contract GasAnomalyTrap is ITrap {
         return abi.encode(
             tx.origin,
             tx.gasprice,
-            block.timestamp
+            block.number
         );
     }
 
@@ -24,12 +24,14 @@ contract GasAnomalyTrap is ITrap {
         address wallet;
         uint256 currentGas;
         uint256 totalGas = 0;
+        uint256 latestBlock;
 
         for (uint256 i = 0; i < data.length; i++) {
-            (address w, uint256 g, ) = abi.decode(data[i], (address, uint256, uint256));
+            (address w, uint256 g, uint256 b) = abi.decode(data[i], (address, uint256, uint256));
             if (i == 0) {
                 wallet = w;
                 currentGas = g;
+                latestBlock = b;
             } else {
                 totalGas += g;
             }
@@ -49,7 +51,7 @@ contract GasAnomalyTrap is ITrap {
                     currentGas,
                     avgGas,
                     (currentGas * 100) / avgGas,
-                    block.timestamp,
+                    latestBlock,
                     "ALERT: Gas anomaly detected"
                 )
             );
